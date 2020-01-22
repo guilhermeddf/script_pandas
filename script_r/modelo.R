@@ -1,259 +1,152 @@
-library(arm)
-library(lme4)
-library(car)
-library(MuMIn)
-library(texreg)
+#install.packages("dplyr")
+#install.packages("beanplot")
+#install.packages("dtwclust")
+#install.packages("reshape")
+#install.packages("ggplot2")
+#install.packages("ggpmisc")
+#install.packages("Hmisc")
+#install.packages("arm")
+#install.packages("coefplot")
+# install.packages("stargazer")
+# install.packages("vioplot")
 
+# pkgs <- c("factoextra",  "NbClust")
+# install.packages(pkgs)
+
+library(ggplot2)
+library(beanplot)
 library(dplyr)
-library(ggplot2) 
-library(arm)
+library(effsize)
+library(dtwclust)
+library(reshape)
+library(factoextra)
+library(NbClust)
+library(ggpmisc)
+library(gginnards)
+library(Hmisc)
+library(MuMIn)
 library(rms)
-library(stringr)
+library(coefplot)
+library(stargazer)
+library(vioplot)
 
-# Fields exported from mongo
-# mongoexport --host=localhost:27017 --db=ghtorrent --collection=versions_transitions_statistics --type csv --out versions_transitions_statistics1.csv  --fields transitionVersion,project,medianInsertions,medianDeletions,medianFiles,medianChanges,medianNumberOfCodeFiles,medianNumberOfCodeFilesChanges,medianMedianDepthCodeFiles,totalCommits,totalChanges,totalNumberOfCodeFilesChanges,totalNumberOfTestFilesChanges,changesPerCommit,codeChangesPerCommit,testChangesPerCommit,countCommitsWithTests,testCommitRatio,totalCommitters,countLowContributors,totalSubmittedPR,totalClosedPR,totalMergedPR,medianTimesToClosePR,medianAddLinesPR,medianDeletedLinesPR,medianChangedFilesPR,medianAddedCommitsPR,medianAddedCommentsPR,medianReviewCommentsPR,medianMergedInsertionsPR,medianMergedDeletionsPR,medianMergedChangesPR,medianMergedTestChangesPR,medianMergedCodeChangesPR
+# 'Normalizar' numero de builds / sonar period days
+#  Fazer um modelo lm
+
+dat = read.csv("/home/case-b315/Desktop/script_pandas/gustavo/dataset_modelo_praticas_ci.csv", header = TRUE)
+# dat <- dat %>% filter(sonar_duration > 90) #at least one month of sonar
+dat <- dat %>% filter(ccq_builds_in_sonar_period >= 20) #at least one month of sonar
+dat <- mutate(dat, ccq_ratio_activity=ci_builds_in_sonar_period/ccq_builds_in_sonar_period)
+dat <- dat %>% filter(ccq_ratio_activity > 1) #at 0.11 ratio
+
+dat <- mutate(dat, ci_builds_activity=ci_builds_total_activity_days/sonar_duration)
+dat <- mutate(dat, commits_activity=commits_total_activity_days/sonar_duration)
+
+# dat1 <- dat %>% filter(ci_builds_total_activity_days <= 90)
+# hist(dat1$ci_builds_total_activity_days)
+
+# dat <- dat %>% filter(ci_builds_per_sonar_days > 0.1) 
+# dat <- dat %>% filter(ci_builds_total_activity_days > 10) 
+summary(dat)
+nrow(dat)
+
+#RQ - Niveis adocao de CI, correlacionar com TDs??
+dat = mutate(dat, cov_quantile = ntile(dat$median_coverage,4))
+dat = mutate(dat, citime_quantile = ntile(dat$median_ci_time_running,4))
+dat = mutate(dat, time_to_fix_quantile = ntile(dat$median_ci_time_to_fix,4))
+dat = mutate(dat, ci_activity_quantile = ntile(dat$ci_builds_activity,4))
+# write.csv(dat,"technical_debts/RQ3/RQ3_RQ4_DataSet.csv", row.names = FALSE)
+
+summary((dat %>% filter(dat$ci_activity_quantile == 4))$ci_builds_activity)
 
 
-datStaticCI = read.csv("csv_data/projects-size-CI.csv", header = TRUE)
-datStaticCI <- datStaticCI %>% mutate(CI = if_else(version <= 12, "NO", "YES"))
-versionsTransitionsStatistics = read.csv("csv_data/versions_transitions_statistics.csv", header = TRUE)
+######## INDEPENDENT VARIABLE #########
+var.independent = "citime_quantile"; var.firstQt="Faster Builds"; var.thirdQt="Slower Builds";
+var.independent = "time_to_fix_quantile"; var.firstQt="Faster Fixes"; var.thirdQt="Slower Fixes";
+var.independent = "cov_quantile"; var.firstQt="Lower Coverage"; var.thirdQt="Higher Coverage";
+var.independent = "ci_activity_quantile"; var.firstQt="Lower CI Activity"; var.thirdQt="Higher CI Activity";
+
+######## RESPONSE VARIABLE #########
+var.response = "median_bugs_density"; var.response_title = "Bugs Density";
+var.response = "median_code_smells_density"; var.response_title = "Code Smells Density";
+var.response = "median_duplicated_lines_density"; var.response_title = "Duplicated Lines Density";
+var.response = "median_sqale_ratio"; var.response_title = "Technical Debts Ratio";
 
 
-versionsTransitionsStatistics$project <- str_split_fixed(versionsTransitionsStatistics$project, "/", 2)[,2]
-ds = merge(x = datStaticCI, y = versionsTransitionsStatistics, by.x = c("project", "version"), by.y = c("project", "transitionVersion"), all.x = TRUE)
-ds[is.na(ds)] <- 0
+vioplot((dat %>% filter(dat[[var.independent]] == 1))[[var.response]],
+        (dat %>% filter(dat[[var.independent]] == 4))[[var.response]], 
+        col = c("gray", "#0097A7"), names = c(var.firstQt, var.thirdQt), 
+        # plotCentre="line",
+        ylab = var.response_title)
 
-# dsa <- ds %>% filter(version < 11)
-dsa <- ds %>% filter(version <= 12)
-# dsb <- ds %>% filter(version > 13)
-dsb <- ds %>% filter(version >= 13)
-
-
-#ALL VARS#
-# medianInsertions+medianDeletions+medianFiles+medianChanges+medianNumberOfCodeFiles+medianNumberOfCodeFilesChanges+medianMedianDepthCodeFiles+totalCommits+totalChanges+totalNumberOfCodeFilesChanges+totalNumberOfTestFilesChanges+changesPerCommit+codeChangesPerCommit+testChangesPerCommit+countCommitsWithTests+testCommitRatio+totalCommitters+totalSubmittedPR+totalClosedPR+totalMergedPR+medianTimesToClosePR+medianAddLinesPR+medianDeletedLinesPR+medianChangedFilesPR+medianAddedCommitsPR+medianAddedCommentsPR+medianReviewCommentsPR+medianMergedInsertionsPR+medianMergedDeletionsPR+medianMergedChangesPR+medianMergedTestChangesPR+medianMergedCodeChangesPR
-
-
-#DSA
-plot(varclus(data=dsa,
-             ~
-               medianDeletions+medianFiles+medianChanges+medianNumberOfCodeFiles+medianNumberOfCodeFilesChanges+medianMedianDepthCodeFiles+totalCommits+changesPerCommit+codeChangesPerCommit+testChangesPerCommit+countCommitsWithTests+testCommitRatio+totalCommitters+totalMergedPR+medianTimesToClosePR+medianAddLinesPR+medianAddedCommentsPR+medianReviewCommentsPR+medianMergedChangesPR+medianMergedTestChangesPR
-))
-abline(h=0.3,lty=2)
-
-redun(data=dsa, nk=0, 
-      ~medianDeletions+medianFiles+medianNumberOfCodeFiles+medianNumberOfCodeFilesChanges+medianMedianDepthCodeFiles+totalCommits+changesPerCommit+codeChangesPerCommit+testChangesPerCommit+countCommitsWithTests+testCommitRatio+totalCommitters+totalMergedPR+medianTimesToClosePR+medianAddedCommentsPR+medianReviewCommentsPR+medianMergedChangesPR+medianMergedTestChangesPR
+wilcox.test(
+  (dat %>% filter(dat[[var.independent]] == 1))[[var.response]],
+  (dat %>% filter(dat[[var.independent]] == 4))[[var.response]]
+)
+cliff.delta(
+  (dat %>% filter(dat[[var.independent]] == 1))[[var.response]],
+  (dat %>% filter(dat[[var.independent]] == 4))[[var.response]]
 )
 
 
-#DSB
-plot(varclus(data=dsb,
-             ~
-               medianDeletions+medianFiles+medianChanges+medianNumberOfCodeFiles+medianNumberOfCodeFilesChanges+medianMedianDepthCodeFiles+totalCommits+totalNumberOfCodeFilesChanges+changesPerCommit+codeChangesPerCommit+testChangesPerCommit+countCommitsWithTests+testCommitRatio+totalCommitters+totalSubmittedPR+totalMergedPR+medianTimesToClosePR+medianAddLinesPR+medianAddedCommentsPR+medianReviewCommentsPR+medianMergedChangesPR+medianMergedTestChangesPR+medianMergedCodeChangesPR
+
+
+
+
+# MODEL
+
+plot(varclus(data=dat,
+             ~ median_coverage +
+               median_ci_time_running +
+               median_ci_time_to_fix +
+               ci_builds_activity +
+               ccq_ratio_activity +
+               median_ncloc
+             
 ))
 abline(h=0.3,lty=2)
 
-redun(data=dsa, nk=0, 
-      ~medianDeletions+medianFiles+medianNumberOfCodeFiles+medianNumberOfCodeFilesChanges+medianMedianDepthCodeFiles+totalCommits+totalNumberOfCodeFilesChanges+codeChangesPerCommit+testChangesPerCommit+countCommitsWithTests+testCommitRatio+totalCommitters+totalSubmittedPR+totalMergedPR+medianTimesToClosePR+medianAddedCommentsPR+medianReviewCommentsPR+medianMergedChangesPR+medianMergedTestChangesPR
+redun(data=dat, nk=0, 
+      ~median_coverage +
+        median_ci_time_running +
+        median_ci_time_to_fix +
+        ci_builds_activity +
+        ccq_ratio_activity +
+        median_ncloc
 )
 
-
-#FIND MODELS
-model1 <- lmer(test_ratio ~
-                 version:project + 
-                 medianFiles
-               +medianMedianDepthCodeFiles
-               +totalCommits
-               +testChangesPerCommit
-               +countCommitsWithTests
-               +testCommitRatio
-               + (1 | project), dsa,  REML=F)
-
-plot(model1)
-r.squaredGLMM(model1)  
-Anova(model1, type=c("III")) 
-summary(model1)
-print(model1, correlation=TRUE) #pegar os coeficientes 
-
-
-#FIND MODELS
-model2 <- lmer(test_ratio ~
-                 version:project + 
-                 medianFiles+medianMedianDepthCodeFiles+totalCommits+testChangesPerCommit+countCommitsWithTests+testCommitRatio+totalSubmittedPR+totalMergedPR+medianAddedCommentsPR
-               + (1 | project), dsa,  REML=F)
-
-plot(model2)
-r.squaredGLMM(model2)  
-Anova(model2, type=c("III")) 
-summary(model2)
-print(model1, correlation=TRUE) #pegar os coeficientes 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#ALL VARS#
-# medianInsertions + medianDeletions + medianFiles + medianChanges + medianNumberOfCodeFiles + medianNumberOfCodeFilesChanges + medianMedianDepthCodeFiles + totalCommits + totalChanges + totalNumberOfCodeFilesChanges + totalNumberOfTestFilesChanges + changesPerCommit + codeChangesPerCommit + testChangesPerCommit + countCommitsWithTests + testCommitRatio + totalCommitters + countLowContributors #
-
-
-##TESTS##
-# Prepare data:
-#checar variaveis correlacionadas... remove e repete até não ter mais nenhuma
-
-#DSA
-plot(varclus(data=dsa,
-             ~
-               medianFiles + medianChanges + medianNumberOfCodeFiles + medianNumberOfCodeFilesChanges + medianMedianDepthCodeFiles + totalCommits + codeChangesPerCommit + testChangesPerCommit + countCommitsWithTests + totalCommitters
-))
-abline(h=0.3,lty=2)
-#sai totalChanges, fica totalNumberOfCodeFilesChanges (por ser mais específico como métrica de código e pode afetar mais na relação de test_ratio)
-# sai changesPerCommit e fica codeChangesPerCommit(por ser mais específico como métrica de código e pode afetar mais na relação de test_ratio)
-# sai medianInsertions+medianDeletions e fica medianChanges (representa as duas variaveis)
-# sai totalNumberOfTestFilesChanges e fica testChangesPerCommit (mais granular)
-# sai testCommitRatio e fica countCommitsWithTests (mais granular)
-# sai countLowContributors e fica totalCommiters (countLowContributors usava calculos em commits futuros)
-# sai totalNumberOfCodeFilesChanges e fica codeCHangesPerCommit (mais granular)
-
-#remove as redundantes
-redun(data=dsa, nk=0, 
-      ~medianFiles + medianChanges + medianNumberOfCodeFiles + medianNumberOfCodeFilesChanges + medianMedianDepthCodeFiles + totalCommits + codeChangesPerCommit + testChangesPerCommit + countCommitsWithTests + totalCommitters)
-
-# sai medianChanges redundant
-#RESULT DSA VARIABLES= medianFiles + medianNumberOfCodeFiles + medianNumberOfCodeFilesChanges + medianMedianDepthCodeFiles + totalCommits + codeChangesPerCommit + testChangesPerCommit + countCommitsWithTests + totalCommitters
-
-
-
-#DSB
-plot(varclus(data=dsb,
-             ~
-               medianFiles + medianChanges + medianNumberOfCodeFiles + medianNumberOfCodeFilesChanges + medianMedianDepthCodeFiles + totalCommits + changesPerCommit + codeChangesPerCommit + testChangesPerCommit + countCommitsWithTests + testCommitRatio + totalCommitters
-))
-abline(h=0.3,lty=2)
-# sai totalNumberOfTestFilesChanges fica testChangesPerCommit (mais granular)
-# sai medianInsertions+medianDeletions e fica medianChanges (representa as duas variaveis)
-# sai countLowContributors e fica totalCommiters (countLowContributors usava calculos em commits futuros)
-# sai totalChanges e fica totalNumberOfCodeFilesChanges (mas especifica de codigo)
-# sai totalNumberOfCodeFilesChanges e fica codeChangesPerCommit (mais granular)
-
-#remove as redundantes
-redun(data=dsb, nk=0, 
-      ~medianFiles + medianChanges + medianNumberOfCodeFiles + medianNumberOfCodeFilesChanges + medianMedianDepthCodeFiles + totalCommits + changesPerCommit + codeChangesPerCommit + testChangesPerCommit + countCommitsWithTests + testCommitRatio + totalCommitters)
-
-# no reduntant redundant
-#RESULT DSB VARIABLES= medianFiles + medianChanges + medianNumberOfCodeFiles + medianNumberOfCodeFilesChanges + medianMedianDepthCodeFiles + totalCommits + changesPerCommit + codeChangesPerCommit + testChangesPerCommit + countCommitsWithTests + testCommitRatio + totalCommitters
-
-
-
-
-
-
-
-
-
-
-
-#FIND MODELS
-#DSA VARIABLES= medianFiles + medianNumberOfCodeFiles + medianNumberOfCodeFilesChanges + medianMedianDepthCodeFiles + totalCommits + codeChangesPerCommit + testChangesPerCommit + countCommitsWithTests + totalCommitters  
-
-
-model1 <- lmer(test_ratio ~
-                 version:project
-               + medianFiles
-               + totalCommits
-               + testChangesPerCommit
-               + countCommitsWithTests
-               + (1 | project), dsa,  REML=F)
-
-
-
-plot(model1)
-r.squaredGLMM(model1)  
-Anova(model1, type=c("III")) 
-summary(model1)
-print(model1, correlation=TRUE) #pegar os coeficientes 
-
-
-write.csv(summary(model1)$coefficients, "model_1_coefficients.csv" )
-
-Anova(model1, type=c("III"))
-capture.output(Anova(model1, type=c("III")), file="model_1_anova.txt")
-
-
-#Variaceis + Raciocínio = FALAR QUE FORAM REMOVIDAS AS VARIAVEIS CORRELACIONADAS (Seguindo o princípio da parcimônia... etc... seguir modelo do paper enviado por daniel)
-#SOMAR OS CHIR E REPORTAR A PROPORÇÂO
-#Falar da influencia do projeto
-#COmentar cada variável (Citar trabalhos relacionados...)
-
-#DSB VARIABLES= medianFiles + medianChanges + medianNumberOfCodeFiles + medianNumberOfCodeFilesChanges + medianMedianDepthCodeFiles + totalCommits + changesPerCommit + codeChangesPerCommit + testChangesPerCommit + countCommitsWithTests + testCommitRatio + totalCommitters
-model2 <- lmer(test_ratio ~ 
-                 version:project 
-               + totalCommits
-               + testChangesPerCommit
-               + countCommitsWithTests
-               + totalCommitters
-               + (1 | project),
-               dsb,  REML=F)
-
-plot(model2)
-r.squaredGLMM(model2)  
-Anova(model2, type=c("III")) 
-summary(model2)
-
-write.csv(summary(model2)$coefficients, "model_2_coefficients.csv" )
-capture.output(Anova(model2, type=c("III")), file="model_2_anova.txt")
-
-
-
-
-# 
-# #BEST ANOVA 
-# # model1 <- lmer(test_ratio ~ medianNumberOfCodeFiles+medianNumberOfCodeFilesChanges+medianMedianDepthCodeFiles+totalCommits+countCommitsWithTests + (1|project), dsa, REML=FALSE)
-# #BEST AIC
-# # model1 <- lmer(test_ratio ~ totalChanges + totalCommits + totalNumberOfCodeFilesChanges + medianNumberOfCodeFiles + changesPerCommit + codeChangesPerCommit + totalCommitters + countLowContributors + (1|project), dsa, REML=FALSE)
-# 
-# 
-# model1 <- lmer(test_ratio ~ medianNumberOfCodeFiles+medianNumberOfCodeFilesChanges+medianMedianDepthCodeFiles+totalCommits+countCommitsWithTests + (1|project), dsa)
-# 
-# plot(model1)
-# 
-# Anova(model1, type=c("III")) 
-# summary(model1)
-# 
-# 
-# r.squaredGLMM(model1)  
-# 
-# 
-# #---> MODEL AFTER
-#   # totalNumberOfCodeFilesChanges
-#   # totalNumberOfTestFilesChanges
-#   # changesPerCommit
-#   # testChangesPerCommit
-#   # testCommitRatio
-# #BEST ANOVA 
-# model2 <- lmer(test_ratio ~ totalNumberOfTestFilesChanges + changesPerCommit + testCommitRatio + (1|project), dsb, REML=FALSE)
-# 
+d <- datadist(dat) 
+options(datadist='d') 
+
+model <- ols(median_sqale_index ~ 
+               (median_coverage +
+                  median_ci_time_running +
+                  median_ci_time_to_fix +
+                  ci_builds_activity) *
+               (ccq_ratio_activity +
+                  median_ncloc)
+             , data = dat, x=TRUE, y=TRUE)
+
+# stargazer(model, title="Regression Results", align=TRUE)
+
+
+plot(anova(model), what='proportion chisq')
+
+anova(model, test = "Chisq")
+rms::validate(model, B=1000)
+
+
+# #FIND MODELS2
+# library(lme4)
+# model2 <- lmer(median_sqale_index ~ 
+#                   median_coverage +
+#                   median_ci_time_running +
+#                   median_ci_time_to_fix +
+#                   ci_builds_activity +
+#                   ccq_ratio_activity
+#                + (1 | median_ncloc), dat,  REML=F)
 # plot(model2)
-# 
+# r.squaredGLMM(model2)  
 # Anova(model2, type=c("III")) 
-# summary(model2)
-# 
-# r.squaredGLMM(model2)
+# summary(model2)   
+
