@@ -33,7 +33,7 @@ library(vioplot)
 # 'Normalizar' numero de builds / sonar period days
 #  Fazer um modelo lm
 
-dat = read.csv("/home/case-b315/Desktop/script_pandas/gustavo/dataset_modelo_praticas_ci.csv", header = TRUE)
+dat = read.csv("/home/case-b315/Desktop/script_pandas/xd/final_modelo_dataset.csv", header = TRUE)
 # dat <- dat %>% filter(sonar_duration > 90) #at least one month of sonar
 dat <- dat %>% filter(ccq_builds_in_sonar_period >= 20) #at least one month of sonar
 dat <- mutate(dat, ccq_ratio_activity=ci_builds_in_sonar_period/ccq_builds_in_sonar_period)
@@ -67,11 +67,13 @@ var.independent = "cov_quantile"; var.firstQt="Lower Coverage"; var.thirdQt="Hig
 var.independent = "ci_activity_quantile"; var.firstQt="Lower CI Activity"; var.thirdQt="Higher CI Activity";
 
 ######## RESPONSE VARIABLE #########
-var.response = "median_bugs_density"; var.response_title = "Bugs Density";
-var.response = "median_code_smells_density"; var.response_title = "Code Smells Density";
-var.response = "median_duplicated_lines_density"; var.response_title = "Duplicated Lines Density";
-var.response = "median_sqale_ratio"; var.response_title = "Technical Debts Ratio";
-
+var.response = "AHH"; var.response_title = "Average Hierarchy Height";
+var.response = "NOC_NOP"; var.response_title = "High-level Structuring";
+var.response = "NOM_NOC"; var.response_title = "Class Structuring";
+var.response = "LOC_NOM"; var.response_title = "Operation Structuring";
+var.response = "CALLS_NOM"; var.response_title = "Coupling Intensity";
+var.response = "CYCLO_LOC"; var.response_title = "Intrinsic Operation Complexity";
+var.response = "FANOUT_CALLS"; var.response_title = "Coupling Dispersion";
 
 vioplot((dat %>% filter(dat[[var.independent]] == 1))[[var.response]],
         (dat %>% filter(dat[[var.independent]] == 4))[[var.response]], 
@@ -87,10 +89,6 @@ cliff.delta(
   (dat %>% filter(dat[[var.independent]] == 1))[[var.response]],
   (dat %>% filter(dat[[var.independent]] == 4))[[var.response]]
 )
-
-
-
-
 
 
 # MODEL
