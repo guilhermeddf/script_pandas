@@ -115,20 +115,21 @@ redun(data=dat, nk=0,
 
 d <- datadist(dat) 
 options(datadist='d') 
-
-model <- ols(median_sqale_index ~ 
-               (median_coverage +
+  
+model <- ols(AHH ~ 
+               median_coverage +
                   median_ci_time_running +
                   median_ci_time_to_fix +
-                  ci_builds_activity) *
-               (ccq_ratio_activity +
-                  median_ncloc)
+                  ci_builds_activity +
+               
+                  median_ncloc
              , data = dat, x=TRUE, y=TRUE)
 
 # stargazer(model, title="Regression Results", align=TRUE)
 
+print(model)
 
-plot(anova(model), what='proportion chisq')
+    plot(anova(model), what='proportion chisq')
 
 anova(model, test = "Chisq")
 rms::validate(model, B=1000)
